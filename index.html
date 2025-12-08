@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Kafka GUI Tool</title>
+  <link rel="stylesheet" href="renderer/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <h1>Kafka GUI Tool</h1>
+      <div class="header-actions">
+        <button id="add-tab-btn" class="btn btn-primary" title="새 탭 추가">+</button>
+      </div>
+    </header>
+
+    <!-- Kafka Tools Warning -->
+    <div id="kafka-tools-warning" class="warning-banner hidden">
+      <span class="warning-icon">⚠️</span>
+      <span class="warning-text">Kafka CLI 도구가 PATH에 설치되어 있지 않습니다.</span>
+      <button class="btn-close" onclick="this.parentElement.classList.add('hidden')">&times;</button>
+    </div>
+
+    <!-- Tab Bar -->
+    <nav class="tab-bar">
+      <div id="tabs-container" class="tabs-container">
+        <!-- 탭들이 동적으로 추가됨 -->
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div id="tab-panels-container">
+        <!-- 탭 패널들이 동적으로 추가됨 -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Tab Panel Template -->
+  <template id="tab-panel-template">
+    <div class="tab-panel" data-tab-id="">
+      <!-- Connection Settings -->
+      <section class="connection-section">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="broker-input">Broker</label>
+            <input type="text" class="broker-input" placeholder="localhost:9092" value="localhost:9092">
+          </div>
+          <div class="form-group">
+            <label for="topic-input">Topic</label>
+            <input type="text" class="topic-input" placeholder="event-result">
+          </div>
+          <div class="form-group">
+            <label for="group-input">Group ID (선택)</label>
+            <input type="text" class="group-input" placeholder="kafka-gui-group">
+          </div>
+        </div>
+        <div class="mode-selector">
+          <label class="radio-label">
+            <input type="radio" name="mode" value="consumer" class="mode-radio" checked>
+            <span>Consumer</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="mode" value="producer" class="mode-radio">
+            <span>Producer</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Consumer Section -->
+      <section class="consumer-section mode-section">
+        <div class="consumer-controls">
+          <div class="filter-group">
+            <input type="text" class="filter-input" placeholder="키워드 검색...">
+            <button class="btn btn-icon filter-btn" title="필터 적용">🔍</button>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-success start-btn">Start</button>
+            <button class="btn btn-danger stop-btn" disabled>Stop</button>
+            <button class="btn btn-secondary clear-btn">Clear</button>
+            <div class="export-dropdown">
+              <button class="btn btn-secondary export-btn">Export ▾</button>
+              <div class="export-menu hidden">
+                <button class="export-json-btn">JSON</button>
+                <button class="export-txt-btn">TXT</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="status-bar">
+          <span class="status-indicator disconnected"></span>
+          <span class="status-text">Disconnected</span>
+          <span class="message-count">Messages: 0</span>
+        </div>
+        <div class="messages-container">
+          <table class="messages-table">
+            <thead>
+              <tr>
+                <th class="col-timestamp">Timestamp</th>
+                <th class="col-partition">Partition</th>
+                <th class="col-offset">Offset</th>
+                <th class="col-key">Key</th>
+                <th class="col-value">Value</th>
+              </tr>
+            </thead>
+            <tbody class="messages-body">
+              <!-- 메시지들이 동적으로 추가됨 -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Producer Section -->
+      <section class="producer-section mode-section hidden">
+        <div class="producer-form">
+          <div class="form-group">
+            <label>Key (선택)</label>
+            <input type="text" class="producer-key-input" placeholder="메시지 키 (선택사항)">
+          </div>
+          <div class="form-group">
+            <label>Value</label>
+            <textarea class="producer-value-input" rows="10" placeholder='{"field": "value"}'></textarea>
+          </div>
+          <div class="repeat-settings">
+            <label class="checkbox-label">
+              <input type="checkbox" class="repeat-checkbox">
+              <span>반복 전송</span>
+            </label>
+            <div class="repeat-options hidden">
+              <div class="form-group-inline">
+                <label>간격 (ms)</label>
+                <input type="number" class="repeat-interval-input" value="1000" min="100">
+              </div>
+              <div class="form-group-inline">
+                <label>횟수</label>
+                <input type="number" class="repeat-count-input" value="10" min="1">
+              </div>
+            </div>
+          </div>
+          <div class="producer-actions">
+            <button class="btn btn-primary send-btn">Send Message</button>
+            <span class="send-status"></span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </template>
+
+  <!-- Message Detail Modal -->
+  <div id="message-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Message Detail</h3>
+        <button class="btn-close modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-row">
+          <label>Timestamp:</label>
+          <span id="modal-timestamp"></span>
+        </div>
+        <div class="detail-row">
+          <label>Partition:</label>
+          <span id="modal-partition"></span>
+        </div>
+        <div class="detail-row">
+          <label>Offset:</label>
+          <span id="modal-offset"></span>
+        </div>
+        <div class="detail-row">
+          <label>Key:</label>
+          <span id="modal-key"></span>
+        </div>
+        <div class="detail-row">
+          <label>Value:</label>
+          <pre id="modal-value" class="json-viewer"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer/app.js"></script>
+</body>
+</html>
