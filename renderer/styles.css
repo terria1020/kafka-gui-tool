@@ -704,3 +704,139 @@ body {
     flex-wrap: wrap;
   }
 }
+
+/* Settings Modal */
+.settings-modal-content {
+  max-width: 450px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-help {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  margin-top: 4px;
+}
+
+.settings-input {
+  width: 100%;
+  padding: 10px 12px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Interactive JSON Viewer */
+.json-key {
+  cursor: pointer;
+  color: var(--accent-secondary);
+  transition: background-color 0.15s;
+  border-radius: 2px;
+  padding: 0 2px;
+  margin: 0 -2px;
+}
+
+.json-key:hover {
+  background-color: rgba(167, 139, 250, 0.2);
+}
+
+.json-index {
+  cursor: pointer;
+  color: var(--accent-secondary);
+  transition: background-color 0.15s;
+  border-radius: 2px;
+  padding: 0 2px;
+  margin: 0 -2px;
+}
+
+.json-index:hover {
+  background-color: rgba(167, 139, 250, 0.2);
+}
+
+.json-string {
+  color: #a5d6a7;
+}
+
+.json-number {
+  color: #90caf9;
+}
+
+.json-boolean {
+  color: #ffab91;
+}
+
+.json-null {
+  color: #9e9e9e;
+  font-style: italic;
+}
+
+/* JSONPath Tooltip */
+.jsonpath-tooltip {
+  position: fixed;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  z-index: 1001;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.jsonpath-text {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  color: var(--accent-secondary);
+  background-color: var(--bg-tertiary);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.jsonpath-copy-btn,
+.jsonpath-filter-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.jsonpath-copy-btn {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.jsonpath-copy-btn:hover {
+  background-color: #6d28d9;
+}
+
+.jsonpath-filter-btn {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.jsonpath-filter-btn:hover {
+  background-color: #454566;
+}

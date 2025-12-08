@@ -13,6 +13,7 @@
     <header class="app-header">
       <h1>Kafka GUI Tool</h1>
       <div class="header-actions">
+        <button id="settings-btn" class="btn btn-secondary btn-icon" title="Settings">&#9881;</button>
         <button id="add-tab-btn" class="btn btn-primary" title="새 탭 추가">+</button>
       </div>
     </header>
@@ -74,7 +75,7 @@
       <section class="consumer-section mode-section">
         <div class="consumer-controls">
           <div class="filter-group">
-            <input type="text" class="filter-input" placeholder="키워드 검색...">
+            <input type="text" class="filter-input" placeholder="키워드 또는 JSONPath ($.data.status)">
             <button class="btn btn-icon filter-btn" title="필터 적용">🔍</button>
           </div>
           <div class="action-buttons">
@@ -177,6 +178,37 @@
           <label>Value:</label>
           <pre id="modal-value" class="json-viewer"></pre>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content settings-modal-content">
+      <div class="modal-header">
+        <h3>Settings</h3>
+        <button class="btn-close modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-form">
+          <div class="form-group">
+            <label for="max-messages-input">Maximum Messages</label>
+            <p class="form-help">탭당 메모리에 보관할 최대 메시지 수 (10 - 100,000)</p>
+            <input
+              type="number"
+              id="max-messages-input"
+              class="settings-input"
+              min="10"
+              max="100000"
+              value="1000"
+              step="100"
+            >
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="settings-cancel-btn" class="btn btn-secondary">Cancel</button>
+        <button id="settings-save-btn" class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>

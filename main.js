@@ -56,13 +56,23 @@ class KafkaConsumerManager {
     }
   }
 
-  async stopConsumer(consumerId) {
+  async stopConsumer(consumerId, force = true) {
     try {
       const consumer = this.consumers.get(consumerId);
       if (consumer) {
-        await consumer.disconnect();
+        // 참조를 먼저 삭제하여 즉시 응답
         this.consumers.delete(consumerId);
         this.kafkaInstances.delete(consumerId);
+
+        if (force) {
+          // Fire-and-forget: 백그라운드에서 disconnect 실행
+          consumer.disconnect().catch(err => {
+            console.log('Background disconnect completed:', err?.message || 'success');
+          });
+        } else {
+          // Graceful shutdown
+          await consumer.disconnect();
+        }
       }
       return { success: true };
     } catch (error) {
@@ -238,27 +248,57 @@ function setupIpcHandlers() {
     }
   });
 
-  // Kafka CLI 도구 확인
+  // Kafka CLI 도구 확인 (패키징된 앱에서도 동작하도록 직접 경로 탐색)
   ipcMain.handle('check-kafka-tools', async () => {
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
+    const os = require('os');
+
+    // 일반적인 Kafka 도구 설치 경로들
+    const searchPaths = [
+      '/opt/homebrew/bin',              // Homebrew Apple Silicon
+      '/usr/local/bin',                 // Homebrew Intel / 일반
+      '/usr/local/confluent/bin',       // Confluent Platform
+      '/opt/kafka/bin',                 // 수동 설치
+      '/usr/local/kafka/bin',           // 수동 설치
+      path.join(os.homedir(), 'kafka/bin'),  // 사용자 홈
+      '/usr/bin',                       // 시스템
+    ];
+
+    // 도구 이름 변형 (.sh 확장자 포함)
+    const toolVariants = {
+      'kafka-console-consumer': ['kafka-console-consumer', 'kafka-console-consumer.sh'],
+      'kafka-console-producer': ['kafka-console-producer', 'kafka-console-producer.sh']
+    };
 
     const tools = {
       'kafka-console-consumer': false,
       'kafka-console-producer': false
     };
 
-    for (const tool of Object.keys(tools)) {
-      try {
-        await execPromise(`which ${tool}`);
-        tools[tool] = true;
-      } catch {
-        // Tool not found
+    const toolPaths = {
+      'kafka-console-consumer': null,
+      'kafka-console-producer': null
+    };
+
+    for (const [toolKey, variants] of Object.entries(toolVariants)) {
+      for (const searchPath of searchPaths) {
+        if (tools[toolKey]) break; // 이미 찾았으면 스킵
+
+        for (const variant of variants) {
+          const fullPath = path.join(searchPath, variant);
+
+          try {
+            await fs.promises.access(fullPath, fs.constants.X_OK);
+            tools[toolKey] = true;
+            toolPaths[toolKey] = fullPath;
+            break;
+          } catch {
+            // 파일 없음 또는 실행 권한 없음
+          }
+        }
       }
     }
 
-    return tools;
+    return { tools, paths: toolPaths };
   });
 }
 
