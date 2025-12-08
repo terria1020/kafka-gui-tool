@@ -330,6 +330,8 @@ class TabController {
     this.tabManager = tabManager;
     this.messages = [];
     this.filteredMessages = [];
+    this.extractedValues = new Map(); // msg offset -> extracted value
+    this.activeValueFilter = null; // 활성 JSONPath 필터
     this.isConsuming = false;
 
     // Settings Manager에서 maxMessages 가져오기
@@ -362,6 +364,7 @@ class TabController {
     // Consumer elements
     this.consumerSection = this.panel.querySelector('.consumer-section');
     this.filterInput = this.panel.querySelector('.filter-input');
+    this.valueFilterInput = this.panel.querySelector('.value-filter-input');
     this.filterBtn = this.panel.querySelector('.filter-btn');
     this.startBtn = this.panel.querySelector('.start-btn');
     this.stopBtn = this.panel.querySelector('.stop-btn');
@@ -405,6 +408,7 @@ class TabController {
 
     // Filter
     this.filterInput.addEventListener('input', () => this.applyFilter());
+    this.valueFilterInput.addEventListener('input', () => this.applyFilter());
     this.filterBtn.addEventListener('click', () => this.applyFilter());
 
     // Export
@@ -478,15 +482,16 @@ class TabController {
   }
 
   async stopConsumer() {
-    try {
-      await window.kafkaAPI.stopConsumer(this.tabId);
-      this.isConsuming = false;
-      this.updateStatus('disconnected', 'Disconnected');
-      this.startBtn.disabled = false;
-      this.stopBtn.disabled = true;
-    } catch (error) {
-      this.showError(error.message);
-    }
+    // UI 상태 즉시 변경 (IPC 응답 기다리지 않음)
+    this.isConsuming = false;
+    this.updateStatus('disconnected', 'Disconnected');
+    this.startBtn.disabled = false;
+    this.stopBtn.disabled = true;
+
+    // 백그라운드에서 실제 종료 처리 (fire-and-forget)
+    window.kafkaAPI.stopConsumer(this.tabId).catch(error => {
+      console.error('Consumer stop error:', error.message);
+    });
   }
 
   updateStatus(status, text) {
@@ -506,30 +511,71 @@ class TabController {
 
   applyFilter() {
     const filterText = this.filterInput.value.trim();
+    const valueFilterText = this.valueFilterInput.value.trim();
 
-    if (!filterText) {
-      this.filteredMessages = [...this.messages];
-    } else if (filterText.startsWith('$')) {
-      // JSONPath 모드
-      this.filteredMessages = this.messages.filter(msg => {
-        try {
-          const parsed = JSON.parse(msg.value);
-          return JSONPathEvaluator.evaluate(parsed, filterText);
-        } catch {
-          return false; // JSON이 아닌 메시지는 JSONPath 필터에서 제외
-        }
-      });
-    } else {
-      // 키워드 검색 모드
+    // 추출 값 초기화
+    this.extractedValues.clear();
+    this.activeValueFilter = null;
+
+    // 1. 키워드 필터 적용
+    let filtered = [...this.messages];
+    if (filterText) {
       const keyword = filterText.toLowerCase();
-      this.filteredMessages = this.messages.filter(msg =>
+      filtered = filtered.filter(msg =>
         (msg.key && msg.key.toLowerCase().includes(keyword)) ||
         (msg.value && msg.value.toLowerCase().includes(keyword))
       );
     }
 
+    // 2. Value JSONPath 필터 적용
+    if (valueFilterText && valueFilterText.startsWith('$')) {
+      this.activeValueFilter = valueFilterText;
+
+      filtered = filtered.filter(msg => {
+        try {
+          const parsed = JSON.parse(msg.value);
+
+          // 비교 연산자가 있는 경우 ($.data.status == "error")
+          const comparisonMatch = valueFilterText.match(/^(.+?)\s*(==|!=|>|<|>=|<=)\s*(.+)$/);
+          if (comparisonMatch) {
+            const [, jsonPath, operator, valueStr] = comparisonMatch;
+            const result = JSONPathEvaluator.evaluate(parsed, valueFilterText);
+            if (result) {
+              // 추출된 값 저장 (비교 대상 경로의 값)
+              const extractedValue = JSONPathEvaluator.getValueByPath(parsed, jsonPath.trim());
+              const msgKey = `${msg.partition}-${msg.offset}`;
+              this.extractedValues.set(msgKey, this.formatExtractedValue(extractedValue));
+            }
+            return result;
+          }
+
+          // 단순 경로 접근 ($.data.name)
+          const extractedValue = JSONPathEvaluator.getValueByPath(parsed, valueFilterText);
+          if (extractedValue !== undefined && extractedValue !== null) {
+            const msgKey = `${msg.partition}-${msg.offset}`;
+            this.extractedValues.set(msgKey, this.formatExtractedValue(extractedValue));
+            return true;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      });
+    }
+
+    this.filteredMessages = filtered;
     this.renderMessages();
     this.updateMessageCount();
+  }
+
+  // 추출된 값 포맷팅
+  formatExtractedValue(value) {
+    if (value === null) return 'null';
+    if (value === undefined) return 'undefined';
+    if (typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+    return String(value);
   }
 
   renderMessages() {
@@ -538,7 +584,19 @@ class TabController {
 
     this.messagesBody.innerHTML = reversedMessages.map((msg, index) => {
       const timestamp = new Date(parseInt(msg.timestamp)).toLocaleString('ko-KR');
-      const valuePreview = this.truncateValue(msg.value, 100);
+      const msgKey = `${msg.partition}-${msg.offset}`;
+
+      // JSONPath 필터가 활성화되어 있으면 추출된 값 표시
+      let displayValue;
+      let isExtracted = false;
+      if (this.activeValueFilter && this.extractedValues.has(msgKey)) {
+        displayValue = this.extractedValues.get(msgKey);
+        isExtracted = true;
+      } else {
+        displayValue = this.truncateValue(msg.value, 100);
+      }
+
+      const extractedClass = isExtracted ? 'extracted-value' : '';
 
       return `
         <tr data-index="${this.filteredMessages.length - 1 - index}">
@@ -546,7 +604,7 @@ class TabController {
           <td>${msg.partition || '-'}</td>
           <td>${msg.offset || '-'}</td>
           <td>${this.escapeHtml(msg.key || '-')}</td>
-          <td class="value-cell" title="${this.escapeHtml(msg.value)}">${this.escapeHtml(valuePreview)}</td>
+          <td class="value-cell ${extractedClass}" title="${this.escapeHtml(msg.value)}">${this.escapeHtml(displayValue)}</td>
         </tr>
       `;
     }).join('');
@@ -748,9 +806,9 @@ class TabController {
       }
     });
 
-    // 필터 버튼 핸들러
+    // 필터 버튼 핸들러 (Value JSONPath 필터에 적용)
     tooltip.querySelector('.jsonpath-filter-btn').addEventListener('click', () => {
-      this.filterInput.value = jsonPath;
+      this.valueFilterInput.value = jsonPath;
       this.applyFilter();
       tooltip.remove();
       // 모달 닫기
@@ -781,6 +839,8 @@ class TabController {
   clearMessages() {
     this.messages = [];
     this.filteredMessages = [];
+    this.extractedValues.clear();
+    this.activeValueFilter = null;
     this.renderMessages();
     this.updateMessageCount();
   }
@@ -893,7 +953,7 @@ class TabController {
     settingsManager.removeListener(this.onSettingsChange);
 
     if (this.isConsuming) {
-      await this.stopConsumer();
+      this.stopConsumer(); // fire-and-forget
     }
   }
 }

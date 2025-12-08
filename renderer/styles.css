@@ -257,7 +257,7 @@ body {
 }
 
 .filter-input {
-  width: 250px;
+  width: 200px;
   padding: 8px 12px;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -269,6 +269,26 @@ body {
 .filter-input:focus {
   outline: none;
   border-color: var(--accent-primary);
+}
+
+.value-filter-input {
+  width: 220px;
+  padding: 8px 12px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.value-filter-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.value-filter-input:not(:placeholder-shown) {
+  border-color: var(--accent-secondary);
+  background-color: rgba(124, 58, 237, 0.1);
 }
 
 .action-buttons {
@@ -418,6 +438,11 @@ body {
   white-space: nowrap;
   font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
   font-size: 0.75rem;
+}
+
+.value-cell.extracted-value {
+  color: var(--accent-secondary);
+  background-color: rgba(124, 58, 237, 0.08);
 }
 
 /* Producer Section */
@@ -695,8 +720,13 @@ body {
     order: 2;
   }
 
-  .filter-input {
+  .filter-input,
+  .value-filter-input {
     width: 100%;
+  }
+
+  .filter-group {
+    flex-direction: column;
   }
 
   .action-buttons {
