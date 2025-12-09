@@ -53,6 +53,16 @@ npm run build:win
 npm run build:linux
 ```
 
+## macOS 실행 문제 해결
+
+GitHub Release에서 다운로드한 앱이 실행되지 않는 경우, 터미널에서 아래 명령어를 실행하세요:
+
+```bash
+xattr -cr "/Applications/Kafka GUI Tool.app"
+```
+
+> 이 문제는 Apple Developer 인증서 없이 빌드된 앱에 macOS Gatekeeper가 격리 속성을 부여하기 때문에 발생합니다. 관련 이슈: [#1](https://github.com/terria1020/kafka-gui-tool/issues/1)
+
 ## Usage
 
 ### Consumer 모드
