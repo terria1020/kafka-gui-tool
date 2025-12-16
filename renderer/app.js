@@ -347,11 +347,8 @@ class TabController {
 
   onSettingsChange(settings) {
     this.maxMessages = settings.maxMessages;
-    // 현재 메시지가 새 제한을 초과하면 trim
-    if (this.messages.length > this.maxMessages) {
-      this.messages = this.messages.slice(-this.maxMessages);
-      this.applyFilter();
-    }
+    // 새 제한에 맞게 필터 및 메시지 제한 다시 적용
+    this.applyFilterAndEnforceLimit();
   }
 
   initElements() {
@@ -454,14 +451,32 @@ class TabController {
 
     this.updateStatus('connecting', 'Connecting...');
     this.startBtn.disabled = true;
+    this.stopBtn.disabled = false; // 연결 중에도 Stop 버튼 활성화
+
+    // 연결 타임아웃 설정 (15초)
+    const connectionTimeout = 15000;
+    let timeoutId = null;
+    let isTimedOut = false;
+
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        isTimedOut = true;
+        reject(new Error('Connection timeout: 연결 시간이 초과되었습니다.'));
+      }, connectionTimeout);
+    });
 
     try {
-      const result = await window.kafkaAPI.startConsumer({
-        consumerId: this.tabId,
-        broker,
-        topic,
-        groupId: groupId || null
-      });
+      const result = await Promise.race([
+        window.kafkaAPI.startConsumer({
+          consumerId: this.tabId,
+          broker,
+          topic,
+          groupId: groupId || null
+        }),
+        timeoutPromise
+      ]);
+
+      clearTimeout(timeoutId);
 
       if (result.success) {
         this.isConsuming = true;
@@ -470,14 +485,26 @@ class TabController {
         this.stopBtn.disabled = false;
         this.tabManager.updateTabLabel(this.tabId, topic);
       } else {
-        this.updateStatus('disconnected', 'Error');
-        this.showError(result.error);
+        this.updateStatus('disconnected', 'Disconnected');
+        // 취소된 경우 에러 메시지 표시 안함
+        if (result.error !== 'Connection cancelled') {
+          this.showError(result.error);
+        }
         this.startBtn.disabled = false;
+        this.stopBtn.disabled = true;
       }
     } catch (error) {
-      this.updateStatus('disconnected', 'Error');
+      clearTimeout(timeoutId);
+
+      // 타임아웃 시 백그라운드에서 연결 정리
+      if (isTimedOut) {
+        window.kafkaAPI.stopConsumer(this.tabId).catch(() => {});
+      }
+
+      this.updateStatus('disconnected', 'Disconnected');
       this.showError(error.message);
       this.startBtn.disabled = false;
+      this.stopBtn.disabled = true;
     }
   }
 
@@ -500,25 +527,22 @@ class TabController {
   }
 
   addMessage(message) {
-    // 최대 메시지 수 제한
-    if (this.messages.length >= this.maxMessages) {
-      this.messages.shift();
-    }
-
     this.messages.push(message);
-    this.applyFilter();
+    this.applyFilterAndEnforceLimit();
   }
 
-  applyFilter() {
+  // 필터 적용 및 메시지 제한을 한번에 처리 (렌더링 중복 방지)
+  applyFilterAndEnforceLimit() {
+    // 1. 필터 적용
     const filterText = this.filterInput.value.trim();
     const valueFilterText = this.valueFilterInput.value.trim();
 
-    // 추출 값 초기화
     this.extractedValues.clear();
     this.activeValueFilter = null;
 
-    // 1. 키워드 필터 적용
     let filtered = [...this.messages];
+
+    // 키워드 필터
     if (filterText) {
       const keyword = filterText.toLowerCase();
       filtered = filtered.filter(msg =>
@@ -527,29 +551,23 @@ class TabController {
       );
     }
 
-    // 2. Value JSONPath 필터 적용
+    // JSONPath 필터
     if (valueFilterText && valueFilterText.startsWith('$')) {
       this.activeValueFilter = valueFilterText;
-
       filtered = filtered.filter(msg => {
         try {
           const parsed = JSON.parse(msg.value);
-
-          // 비교 연산자가 있는 경우 ($.data.status == "error")
           const comparisonMatch = valueFilterText.match(/^(.+?)\s*(==|!=|>|<|>=|<=)\s*(.+)$/);
           if (comparisonMatch) {
-            const [, jsonPath, operator, valueStr] = comparisonMatch;
+            const [, jsonPath] = comparisonMatch;
             const result = JSONPathEvaluator.evaluate(parsed, valueFilterText);
             if (result) {
-              // 추출된 값 저장 (비교 대상 경로의 값)
               const extractedValue = JSONPathEvaluator.getValueByPath(parsed, jsonPath.trim());
               const msgKey = `${msg.partition}-${msg.offset}`;
               this.extractedValues.set(msgKey, this.formatExtractedValue(extractedValue));
             }
             return result;
           }
-
-          // 단순 경로 접근 ($.data.name)
           const extractedValue = JSONPathEvaluator.getValueByPath(parsed, valueFilterText);
           if (extractedValue !== undefined && extractedValue !== null) {
             const msgKey = `${msg.partition}-${msg.offset}`;
@@ -564,8 +582,40 @@ class TabController {
     }
 
     this.filteredMessages = filtered;
+
+    // 2. 메시지 제한 적용 (필터 상태에 따라 다르게 동작)
+    const hasFilter = filterText || (valueFilterText && valueFilterText.startsWith('$'));
+
+    if (hasFilter) {
+      // 필터가 있으면: 필터된 메시지 수가 maxMessages를 초과할 때만 원본 메시지 정리
+      while (this.filteredMessages.length > this.maxMessages && this.messages.length > 0) {
+        const oldestMsg = this.messages.shift();
+        const idx = this.filteredMessages.findIndex(m =>
+          m.partition === oldestMsg.partition && m.offset === oldestMsg.offset
+        );
+        if (idx !== -1) {
+          this.filteredMessages.splice(idx, 1);
+          const msgKey = `${oldestMsg.partition}-${oldestMsg.offset}`;
+          this.extractedValues.delete(msgKey);
+        }
+      }
+    } else {
+      // 필터가 없으면: 전체 메시지 수 기준으로 제한
+      while (this.messages.length > this.maxMessages) {
+        this.messages.shift();
+      }
+      this.filteredMessages = [...this.messages];
+    }
+
+    // 3. 렌더링 (한 번만 호출)
     this.renderMessages();
     this.updateMessageCount();
+  }
+
+  applyFilter() {
+    // 사용자가 필터 입력을 변경했을 때 호출됨
+    // 필터 적용 및 제한 로직을 재사용
+    this.applyFilterAndEnforceLimit();
   }
 
   // 추출된 값 포맷팅

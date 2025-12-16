@@ -1,22 +1,36 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Kafka } = require('kafkajs');
+
+// 멀티 인스턴스 지원을 위해 single instance lock 사용하지 않음
+// 사용자가 여러 창을 열 수 있도록 허용
 
 // Kafka 매니저 클래스들
 class KafkaConsumerManager {
   constructor() {
     this.consumers = new Map();
     this.kafkaInstances = new Map();
+    this.pendingConnections = new Map(); // 진행 중인 연결 추적
   }
 
   async createConsumer(consumerId, broker, topic, groupId, mainWindow) {
-    try {
-      // 기존 consumer가 있으면 먼저 정리
-      if (this.consumers.has(consumerId)) {
-        await this.stopConsumer(consumerId);
-      }
+    // 진행 중인 연결이 있으면 먼저 취소
+    if (this.pendingConnections.has(consumerId)) {
+      this.pendingConnections.get(consumerId).cancelled = true;
+      this.pendingConnections.delete(consumerId);
+    }
 
+    // 기존 consumer가 있으면 먼저 정리
+    if (this.consumers.has(consumerId)) {
+      await this.stopConsumer(consumerId);
+    }
+
+    // 연결 상태 추적 객체
+    const connectionState = { cancelled: false };
+    this.pendingConnections.set(consumerId, connectionState);
+
+    try {
       const kafka = new Kafka({
         clientId: `kafka-gui-${consumerId}`,
         brokers: [broker],
@@ -28,11 +42,28 @@ class KafkaConsumerManager {
         groupId: groupId || `kafka-gui-group-${consumerId}-${Date.now()}`
       });
 
+      // 연결 시도
       await consumer.connect();
+
+      // 연결 중 취소 요청이 들어왔는지 확인
+      if (connectionState.cancelled) {
+        consumer.disconnect().catch(() => {});
+        return { success: false, error: 'Connection cancelled' };
+      }
+
       await consumer.subscribe({ topic, fromBeginning: false });
+
+      // 구독 중 취소 요청 확인
+      if (connectionState.cancelled) {
+        consumer.disconnect().catch(() => {});
+        return { success: false, error: 'Connection cancelled' };
+      }
 
       await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
+          // consumer가 여전히 활성 상태인지 확인
+          if (!this.consumers.has(consumerId)) return;
+
           const messageData = {
             consumerId,
             timestamp: message.timestamp,
@@ -46,11 +77,25 @@ class KafkaConsumerManager {
         }
       });
 
+      // 최종 취소 확인
+      if (connectionState.cancelled) {
+        consumer.disconnect().catch(() => {});
+        return { success: false, error: 'Connection cancelled' };
+      }
+
       this.consumers.set(consumerId, consumer);
       this.kafkaInstances.set(consumerId, kafka);
+      this.pendingConnections.delete(consumerId);
 
       return { success: true };
     } catch (error) {
+      this.pendingConnections.delete(consumerId);
+
+      // 연결이 취소된 경우
+      if (connectionState.cancelled) {
+        return { success: false, error: 'Connection cancelled' };
+      }
+
       console.error('Consumer creation error:', error);
       return { success: false, error: error.message };
     }
@@ -58,6 +103,12 @@ class KafkaConsumerManager {
 
   async stopConsumer(consumerId, force = true) {
     try {
+      // 진행 중인 연결 취소
+      if (this.pendingConnections.has(consumerId)) {
+        this.pendingConnections.get(consumerId).cancelled = true;
+        this.pendingConnections.delete(consumerId);
+      }
+
       const consumer = this.consumers.get(consumerId);
       if (consumer) {
         // 참조를 먼저 삭제하여 즉시 응답
@@ -82,6 +133,12 @@ class KafkaConsumerManager {
   }
 
   async stopAll() {
+    // 모든 진행 중인 연결 취소
+    for (const state of this.pendingConnections.values()) {
+      state.cancelled = true;
+    }
+    this.pendingConnections.clear();
+
     for (const consumerId of this.consumers.keys()) {
       await this.stopConsumer(consumerId);
     }
@@ -302,8 +359,92 @@ function setupIpcHandlers() {
   });
 }
 
+// 메뉴 템플릿 생성
+function createMenu() {
+  const isMac = process.platform === 'darwin';
+
+  const template = [
+    // 앱 메뉴 (macOS만)
+    ...(isMac ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }] : []),
+    // 파일 메뉴
+    {
+      label: '파일',
+      submenu: [
+        {
+          label: '새 창',
+          accelerator: isMac ? 'Cmd+Shift+N' : 'Ctrl+Shift+N',
+          click: () => createWindow()
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' }
+      ]
+    },
+    // 편집 메뉴
+    {
+      label: '편집',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    // 보기 메뉴
+    {
+      label: '보기',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    // 창 메뉴
+    {
+      label: '창',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac ? [
+          { type: 'separator' },
+          { role: 'front' },
+          { type: 'separator' },
+          { role: 'window' }
+        ] : [
+          { role: 'close' }
+        ])
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
 app.whenReady().then(() => {
   setupIpcHandlers();
+  createMenu();
   createWindow();
 
   app.on('activate', () => {
