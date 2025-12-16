@@ -607,6 +607,15 @@ body {
   background-color: #dc2626;
 }
 
+.btn-warning {
+  background-color: var(--warning);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #d97706;
+}
+
 .btn-icon {
   padding: 8px;
   display: flex;

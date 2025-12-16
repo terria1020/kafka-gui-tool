@@ -333,6 +333,7 @@ class TabController {
     this.extractedValues = new Map(); // msg offset -> extracted value
     this.activeValueFilter = null; // 활성 JSONPath 필터
     this.isConsuming = false;
+    this.isPaused = false; // 렌더링 일시 중지 상태
     this.totalReceivedCount = 0; // 총 수신 메시지 카운트
     this.droppedCount = 0; // 필터로 버려진 메시지 카운트
 
@@ -366,6 +367,7 @@ class TabController {
     this.valueFilterInput = this.panel.querySelector('.value-filter-input');
     this.filterBtn = this.panel.querySelector('.filter-btn');
     this.startBtn = this.panel.querySelector('.start-btn');
+    this.pauseBtn = this.panel.querySelector('.pause-btn');
     this.stopBtn = this.panel.querySelector('.stop-btn');
     this.clearBtn = this.panel.querySelector('.clear-btn');
     this.exportBtn = this.panel.querySelector('.export-btn');
@@ -403,6 +405,7 @@ class TabController {
 
     // Consumer controls
     this.startBtn.addEventListener('click', () => this.startConsumer());
+    this.pauseBtn.addEventListener('click', () => this.togglePause());
     this.stopBtn.addEventListener('click', () => this.stopConsumer());
     this.clearBtn.addEventListener('click', () => this.clearMessages());
 
@@ -510,8 +513,11 @@ class TabController {
 
       if (result.success) {
         this.isConsuming = true;
+        this.isPaused = false;
         this.updateStatus('connected', 'Connected');
         this.startBtn.disabled = true;
+        this.pauseBtn.disabled = false;
+        this.pauseBtn.textContent = 'Pause';
         this.stopBtn.disabled = false;
         this.tabManager.updateTabLabel(this.tabId, topic);
       } else {
@@ -521,6 +527,7 @@ class TabController {
           this.showError(result.error);
         }
         this.startBtn.disabled = false;
+        this.pauseBtn.disabled = true;
         this.stopBtn.disabled = true;
       }
     } catch (error) {
@@ -534,15 +541,36 @@ class TabController {
       this.updateStatus('disconnected', 'Disconnected');
       this.showError(error.message);
       this.startBtn.disabled = false;
+      this.pauseBtn.disabled = true;
       this.stopBtn.disabled = true;
+    }
+  }
+
+  togglePause() {
+    this.isPaused = !this.isPaused;
+    if (this.isPaused) {
+      this.pauseBtn.textContent = 'Resume';
+      this.updateStatus('connected', 'Paused');
+      // Pause 시 현재까지 쌓인 메시지 렌더링
+      this.renderMessages();
+      this.updateMessageCount();
+    } else {
+      this.pauseBtn.textContent = 'Pause';
+      this.updateStatus('connected', 'Connected');
+      // Resume 시 쌓인 메시지 렌더링
+      this.renderMessages();
+      this.updateMessageCount();
     }
   }
 
   async stopConsumer() {
     // UI 상태 즉시 변경 (IPC 응답 기다리지 않음)
     this.isConsuming = false;
+    this.isPaused = false;
     this.updateStatus('disconnected', 'Disconnected');
     this.startBtn.disabled = false;
+    this.pauseBtn.disabled = true;
+    this.pauseBtn.textContent = 'Pause';
     this.stopBtn.disabled = true;
 
     // 백그라운드에서 실제 종료 처리 (fire-and-forget)
@@ -693,8 +721,10 @@ class TabController {
       this.filteredMessages = [...this.messages];
     }
 
-    // 3. 렌더링 (한 번만 호출)
-    this.renderMessages();
+    // 3. 렌더링 (Pause 상태가 아닐 때만)
+    if (!this.isPaused) {
+      this.renderMessages();
+    }
     this.updateMessageCount();
   }
 
