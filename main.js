@@ -62,10 +62,17 @@ class KafkaConsumerManager {
         return { success: false, error: 'Connection cancelled' };
       }
 
+      // consumer를 먼저 등록하여 eachMessage에서 확인할 수 있도록 함
+      this.consumers.set(consumerId, consumer);
+      this.kafkaInstances.set(consumerId, kafka);
+
       await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
           // consumer가 여전히 활성 상태인지 확인
           if (!this.consumers.has(consumerId)) return;
+
+          // 창이 여전히 유효한지 확인
+          if (!mainWindow || mainWindow.isDestroyed()) return;
 
           const messageData = {
             consumerId,
@@ -76,18 +83,23 @@ class KafkaConsumerManager {
             value: message.value?.toString() || '',
             headers: message.headers || {}
           };
-          mainWindow.webContents.send('kafka-message', messageData);
+
+          try {
+            mainWindow.webContents.send('kafka-message', messageData);
+          } catch (err) {
+            console.error('Failed to send message to window:', err.message);
+          }
         }
       });
 
       // 최종 취소 확인
       if (connectionState.cancelled) {
+        this.consumers.delete(consumerId);
+        this.kafkaInstances.delete(consumerId);
         consumer.disconnect().catch(() => {});
         return { success: false, error: 'Connection cancelled' };
       }
 
-      this.consumers.set(consumerId, consumer);
-      this.kafkaInstances.set(consumerId, kafka);
       this.pendingConnections.delete(consumerId);
 
       return { success: true };
