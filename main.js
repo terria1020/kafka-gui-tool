@@ -205,10 +205,10 @@ class KafkaProducerManager {
 // 전역 매니저 인스턴스
 let consumerManager;
 let producerManager;
-let mainWindow;
+const windows = new Set(); // 모든 창 추적
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
@@ -220,10 +220,18 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile('index.html');
+  windows.add(win);
+
+  win.on('closed', () => {
+    windows.delete(win);
+  });
+
+  win.loadFile('index.html');
 
   // 개발 시 DevTools 열기
-  // mainWindow.webContents.openDevTools();
+  // win.webContents.openDevTools();
+
+  return win;
 }
 
 // IPC 핸들러 등록
@@ -234,7 +242,9 @@ function setupIpcHandlers() {
   // Consumer 시작
   ipcMain.handle('start-consumer', async (event, config) => {
     const { consumerId, broker, topic, groupId } = config;
-    return await consumerManager.createConsumer(consumerId, broker, topic, groupId, mainWindow);
+    // 요청을 보낸 창 찾기
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    return await consumerManager.createConsumer(consumerId, broker, topic, groupId, senderWindow);
   });
 
   // Consumer 중지
