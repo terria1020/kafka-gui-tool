@@ -632,7 +632,7 @@ class TabController {
     // 역순으로 표시 (최신 메시지가 위로)
     const reversedMessages = [...this.filteredMessages].reverse();
 
-    this.messagesBody.innerHTML = reversedMessages.map((msg, index) => {
+    this.messagesBody.innerHTML = reversedMessages.map((msg) => {
       const timestamp = new Date(parseInt(msg.timestamp)).toLocaleString('ko-KR');
       const msgKey = `${msg.partition}-${msg.offset}`;
 
@@ -648,8 +648,9 @@ class TabController {
 
       const extractedClass = isExtracted ? 'extracted-value' : '';
 
+      // 메시지를 고유하게 식별하기 위해 partition-offset 사용
       return `
-        <tr data-index="${this.filteredMessages.length - 1 - index}">
+        <tr data-partition="${msg.partition}" data-offset="${msg.offset}">
           <td>${timestamp}</td>
           <td>${msg.partition || '-'}</td>
           <td>${msg.offset || '-'}</td>
@@ -659,11 +660,19 @@ class TabController {
       `;
     }).join('');
 
-    // 행 클릭 이벤트
+    // 행 클릭 이벤트 - 클릭 시점의 메시지 데이터를 복사하여 저장
     this.messagesBody.querySelectorAll('tr').forEach(row => {
       row.addEventListener('click', () => {
-        const index = parseInt(row.dataset.index);
-        this.showMessageDetail(this.filteredMessages[index]);
+        const partition = row.dataset.partition;
+        const offset = row.dataset.offset;
+        // 클릭 시점에 메시지 찾기
+        const message = this.filteredMessages.find(m =>
+          String(m.partition) === partition && String(m.offset) === offset
+        );
+        if (message) {
+          // 메시지 복사본을 전달하여 이후 변경에 영향받지 않도록 함
+          this.showMessageDetail({ ...message });
+        }
       });
     });
   }
