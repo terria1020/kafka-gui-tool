@@ -135,7 +135,8 @@ const JSONPathEvaluator = {
 class SettingsManager {
   constructor() {
     this.defaults = {
-      maxMessages: 1000
+      maxMessages: 1000,
+      checkTopic: true
     };
     this.settings = this.loadSettings();
     this.listeners = [];
@@ -147,7 +148,8 @@ class SettingsManager {
       if (stored) {
         const parsed = JSON.parse(stored);
         return {
-          maxMessages: this.validateMaxMessages(parsed.maxMessages)
+          maxMessages: this.validateMaxMessages(parsed.maxMessages),
+          checkTopic: parsed.checkTopic !== undefined ? parsed.checkTopic : this.defaults.checkTopic
         };
       }
     } catch (e) {
@@ -165,7 +167,8 @@ class SettingsManager {
   saveSettings(newSettings) {
     this.settings = {
       ...this.settings,
-      maxMessages: this.validateMaxMessages(newSettings.maxMessages)
+      maxMessages: this.validateMaxMessages(newSettings.maxMessages),
+      checkTopic: newSettings.checkTopic !== undefined ? newSettings.checkTopic : this.settings.checkTopic
     };
     localStorage.setItem('kafka-gui-settings', JSON.stringify(this.settings));
     this.notifyListeners();
@@ -173,6 +176,10 @@ class SettingsManager {
 
   getMaxMessages() {
     return this.settings.maxMessages;
+  }
+
+  getCheckTopic() {
+    return this.settings.checkTopic;
   }
 
   addListener(callback) {
@@ -478,33 +485,35 @@ class TabController {
       return;
     }
 
-    this.updateStatus('connecting', 'Checking topic...');
     this.startBtn.disabled = true;
     this.stopBtn.disabled = false; // 연결 중에도 Stop 버튼 활성화
 
-    // 토픽 존재 여부 확인
-    try {
-      const topicCheck = await window.kafkaAPI.checkTopicExists({ broker, topic });
-      if (!topicCheck.success) {
+    // 토픽 존재 여부 확인 (설정에서 활성화된 경우에만)
+    if (settingsManager.getCheckTopic()) {
+      this.updateStatus('connecting', 'Checking topic...');
+      try {
+        const topicCheck = await window.kafkaAPI.checkTopicExists({ broker, topic });
+        if (!topicCheck.success) {
+          this.updateStatus('disconnected', 'Disconnected');
+          this.showError(`토픽 확인 실패: ${topicCheck.error}`);
+          this.startBtn.disabled = false;
+          this.stopBtn.disabled = true;
+          return;
+        }
+        if (!topicCheck.exists) {
+          this.updateStatus('disconnected', 'Disconnected');
+          this.showError(`토픽 '${topic}'이(가) 존재하지 않습니다.`);
+          this.startBtn.disabled = false;
+          this.stopBtn.disabled = true;
+          return;
+        }
+      } catch (error) {
         this.updateStatus('disconnected', 'Disconnected');
-        this.showError(`토픽 확인 실패: ${topicCheck.error}`);
+        this.showError(`토픽 확인 중 오류: ${error.message}`);
         this.startBtn.disabled = false;
         this.stopBtn.disabled = true;
         return;
       }
-      if (!topicCheck.exists) {
-        this.updateStatus('disconnected', 'Disconnected');
-        this.showError(`토픽 '${topic}'이(가) 존재하지 않습니다.`);
-        this.startBtn.disabled = false;
-        this.stopBtn.disabled = true;
-        return;
-      }
-    } catch (error) {
-      this.updateStatus('disconnected', 'Disconnected');
-      this.showError(`토픽 확인 중 오류: ${error.message}`);
-      this.startBtn.disabled = false;
-      this.stopBtn.disabled = true;
-      return;
     }
 
     this.updateStatus('connecting', 'Connecting...');
@@ -1108,29 +1117,31 @@ class TabController {
     }
 
     this.sendBtn.disabled = true;
-    this.sendStatus.textContent = 'Checking topic...';
     this.sendStatus.className = 'send-status';
 
-    // 토픽 존재 여부 확인
-    try {
-      const topicCheck = await window.kafkaAPI.checkTopicExists({ broker, topic });
-      if (!topicCheck.success) {
-        this.sendStatus.textContent = `토픽 확인 실패: ${topicCheck.error}`;
+    // 토픽 존재 여부 확인 (설정에서 활성화된 경우에만)
+    if (settingsManager.getCheckTopic()) {
+      this.sendStatus.textContent = 'Checking topic...';
+      try {
+        const topicCheck = await window.kafkaAPI.checkTopicExists({ broker, topic });
+        if (!topicCheck.success) {
+          this.sendStatus.textContent = `토픽 확인 실패: ${topicCheck.error}`;
+          this.sendStatus.className = 'send-status error';
+          this.sendBtn.disabled = false;
+          return;
+        }
+        if (!topicCheck.exists) {
+          this.sendStatus.textContent = `토픽 '${topic}'이(가) 존재하지 않습니다.`;
+          this.sendStatus.className = 'send-status error';
+          this.sendBtn.disabled = false;
+          return;
+        }
+      } catch (error) {
+        this.sendStatus.textContent = `토픽 확인 중 오류: ${error.message}`;
         this.sendStatus.className = 'send-status error';
         this.sendBtn.disabled = false;
         return;
       }
-      if (!topicCheck.exists) {
-        this.sendStatus.textContent = `토픽 '${topic}'이(가) 존재하지 않습니다.`;
-        this.sendStatus.className = 'send-status error';
-        this.sendBtn.disabled = false;
-        return;
-      }
-    } catch (error) {
-      this.sendStatus.textContent = `토픽 확인 중 오류: ${error.message}`;
-      this.sendStatus.className = 'send-status error';
-      this.sendBtn.disabled = false;
-      return;
     }
 
     this.sendStatus.textContent = 'Sending...';
@@ -1408,12 +1419,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingsBtn = document.getElementById('settings-btn');
   const settingsModal = document.getElementById('settings-modal');
   const maxMessagesInput = document.getElementById('max-messages-input');
+  const checkTopicInput = document.getElementById('check-topic-input');
   const settingsSaveBtn = document.getElementById('settings-save-btn');
   const settingsCancelBtn = document.getElementById('settings-cancel-btn');
 
   if (settingsBtn && settingsModal) {
     const openSettingsModal = () => {
       maxMessagesInput.value = settingsManager.getMaxMessages();
+      checkTopicInput.checked = settingsManager.getCheckTopic();
       settingsModal.classList.remove('hidden');
     };
 
@@ -1430,7 +1443,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       maxMessagesInput.style.borderColor = '';
-      settingsManager.saveSettings({ maxMessages: value });
+      settingsManager.saveSettings({
+        maxMessages: value,
+        checkTopic: checkTopicInput.checked
+      });
       closeSettingsModal();
     };
 
