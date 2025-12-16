@@ -31,9 +31,12 @@ class KafkaConsumerManager {
     this.pendingConnections.set(consumerId, connectionState);
 
     try {
+      // 브로커 목록 파싱 (쉼표로 구분된 여러 브로커 지원)
+      const brokerList = broker.split(',').map(b => b.trim()).filter(b => b);
+
       const kafka = new Kafka({
         clientId: `kafka-gui-${consumerId}`,
-        brokers: [broker],
+        brokers: brokerList,
         connectionTimeout: 10000,
         requestTimeout: 30000,
       });
@@ -156,9 +159,12 @@ class KafkaProducerManager {
       return this.producers.get(broker);
     }
 
+    // 브로커 목록 파싱 (쉼표로 구분된 여러 브로커 지원)
+    const brokerList = broker.split(',').map(b => b.trim()).filter(b => b);
+
     const kafka = new Kafka({
       clientId: 'kafka-gui-producer',
-      brokers: [broker],
+      brokers: brokerList,
       connectionTimeout: 10000,
       requestTimeout: 30000,
     });
