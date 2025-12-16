@@ -207,6 +207,9 @@ class KafkaProducerManager {
       return { success: true };
     } catch (error) {
       console.error('Producer send error:', error);
+      // 에러 발생 시 producer 캐시 제거하여 다음 전송 시 재연결
+      this.producers.delete(broker);
+      this.kafkaInstances.delete(broker);
       return { success: false, error: error.message };
     }
   }
@@ -224,6 +227,7 @@ class KafkaProducerManager {
 let consumerManager;
 let producerManager;
 const windows = new Set(); // 모든 창 추적
+const repeatSendCancelled = new Map(); // 반복 전송 취소 상태 추적
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -278,14 +282,37 @@ function setupIpcHandlers() {
 
   // 반복 메시지 전송
   ipcMain.handle('send-message-repeat', async (event, data) => {
-    const { broker, topic, key, value, intervalMs, count } = data;
-    const results = [];
+    const { broker, topic, key, value, intervalMs, count, sendId } = data;
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+
+    // 취소 상태 초기화
+    repeatSendCancelled.set(sendId, false);
 
     for (let i = 0; i < count; i++) {
+      // 취소 요청 확인
+      if (repeatSendCancelled.get(sendId)) {
+        repeatSendCancelled.delete(sendId);
+        return { success: false, cancelled: true, sentCount: i };
+      }
+
       const result = await producerManager.sendMessage(broker, topic, key, value);
-      results.push(result);
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      // 전송 진행 상황을 renderer에 알림
+      if (senderWindow && !senderWindow.isDestroyed()) {
+        senderWindow.webContents.send('send-progress', {
+          sendId,
+          index: i + 1,
+          total: count,
+          time: timeStr,
+          success: result.success,
+          error: result.error
+        });
+      }
 
       if (!result.success) {
+        repeatSendCancelled.delete(sendId);
         return { success: false, error: result.error, sentCount: i };
       }
 
@@ -294,7 +321,14 @@ function setupIpcHandlers() {
       }
     }
 
+    repeatSendCancelled.delete(sendId);
     return { success: true, sentCount: count };
+  });
+
+  // 반복 전송 취소
+  ipcMain.handle('cancel-repeat-send', async (event, sendId) => {
+    repeatSendCancelled.set(sendId, true);
+    return { success: true };
   });
 
   // 메시지 Export
@@ -413,6 +447,130 @@ function setupIpcHandlers() {
     }
 
     return { tools, paths: toolPaths };
+  });
+
+  // Util: Broker 상태 확인
+  ipcMain.handle('get-broker-status', async (event, broker) => {
+    try {
+      const brokerList = broker.split(',').map(b => b.trim()).filter(b => b);
+
+      const kafka = new Kafka({
+        clientId: 'kafka-gui-util',
+        brokers: brokerList,
+        connectionTimeout: 10000,
+        requestTimeout: 10000,
+      });
+
+      const admin = kafka.admin();
+      await admin.connect();
+
+      const cluster = await admin.describeCluster();
+      await admin.disconnect();
+
+      return {
+        success: true,
+        brokers: cluster.brokers,
+        controller: cluster.controller,
+        clusterId: cluster.clusterId
+      };
+    } catch (error) {
+      console.error('Broker status error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Util: 토픽 목록 조회
+  ipcMain.handle('get-topics-list', async (event, broker) => {
+    try {
+      const brokerList = broker.split(',').map(b => b.trim()).filter(b => b);
+
+      const kafka = new Kafka({
+        clientId: 'kafka-gui-util',
+        brokers: brokerList,
+        connectionTimeout: 10000,
+        requestTimeout: 10000,
+      });
+
+      const admin = kafka.admin();
+      await admin.connect();
+
+      const topics = await admin.listTopics();
+      const topicMetadata = await admin.fetchTopicMetadata({ topics });
+
+      await admin.disconnect();
+
+      return {
+        success: true,
+        topics: topicMetadata.topics.map(t => ({
+          name: t.name,
+          partitions: t.partitions.length
+        }))
+      };
+    } catch (error) {
+      console.error('Topics list error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Util: 소비 그룹 목록 조회
+  ipcMain.handle('get-consumer-groups', async (event, broker) => {
+    try {
+      const brokerList = broker.split(',').map(b => b.trim()).filter(b => b);
+
+      const kafka = new Kafka({
+        clientId: 'kafka-gui-util',
+        brokers: brokerList,
+        connectionTimeout: 10000,
+        requestTimeout: 10000,
+      });
+
+      const admin = kafka.admin();
+      await admin.connect();
+
+      const groups = await admin.listGroups();
+      await admin.disconnect();
+
+      return {
+        success: true,
+        groups: groups.groups.map(g => ({
+          groupId: g.groupId,
+          protocolType: g.protocolType
+        }))
+      };
+    } catch (error) {
+      console.error('Consumer groups error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Util: 클러스터 정보 조회
+  ipcMain.handle('get-cluster-info', async (event, broker) => {
+    try {
+      const brokerList = broker.split(',').map(b => b.trim()).filter(b => b);
+
+      const kafka = new Kafka({
+        clientId: 'kafka-gui-util',
+        brokers: brokerList,
+        connectionTimeout: 10000,
+        requestTimeout: 10000,
+      });
+
+      const admin = kafka.admin();
+      await admin.connect();
+
+      const cluster = await admin.describeCluster();
+      await admin.disconnect();
+
+      return {
+        success: true,
+        clusterId: cluster.clusterId,
+        controller: cluster.controller,
+        brokers: cluster.brokers
+      };
+    } catch (error) {
+      console.error('Cluster info error:', error);
+      return { success: false, error: error.message };
+    }
   });
 }
 

@@ -924,3 +924,169 @@ body {
 .jsonpath-filter-btn:hover {
   background-color: #454566;
 }
+
+/* Util Button (small) */
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 0.8125rem;
+}
+
+/* Send Log */
+.send-log-container {
+  margin-top: 16px;
+  background-color: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.send-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.send-log {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 0.75rem;
+}
+
+.send-log-entry {
+  display: flex;
+  gap: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.send-log-entry:nth-child(odd) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.send-log-entry.success {
+  color: var(--success);
+}
+
+.send-log-entry.error {
+  color: var(--danger);
+}
+
+.send-log-time {
+  color: var(--text-muted);
+  min-width: 80px;
+}
+
+.send-log-msg {
+  flex: 1;
+}
+
+/* Cancel Button Animation */
+.cancel-send-btn {
+  animation: pulse-danger 1.5s infinite;
+}
+
+@keyframes pulse-danger {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+/* Util Modal */
+.util-modal-content {
+  max-width: 600px;
+}
+
+.util-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+
+.util-tab {
+  padding: 8px 14px;
+  background-color: var(--bg-tertiary);
+  border: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.util-tab:hover {
+  background-color: #454566;
+  color: var(--text-primary);
+}
+
+.util-tab.active {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.util-content {
+  min-height: 250px;
+}
+
+.util-panel {
+  display: none;
+}
+
+.util-panel.active {
+  display: block;
+}
+
+.util-result {
+  background-color: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 0.8125rem;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.util-result .loading {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 40px;
+}
+
+.util-result .error {
+  color: var(--danger);
+}
+
+.util-result .broker-item,
+.util-result .topic-item,
+.util-result .group-item {
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background-color: var(--bg-secondary);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.util-result .broker-item.controller {
+  border-left-color: var(--success);
+}
+
+.util-result .item-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.util-result .item-value {
+  color: var(--text-primary);
+}

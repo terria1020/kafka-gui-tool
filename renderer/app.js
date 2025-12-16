@@ -389,7 +389,18 @@ class TabController {
     this.repeatIntervalInput = this.panel.querySelector('.repeat-interval-input');
     this.repeatCountInput = this.panel.querySelector('.repeat-count-input');
     this.sendBtn = this.panel.querySelector('.send-btn');
+    this.cancelSendBtn = this.panel.querySelector('.cancel-send-btn');
     this.sendStatus = this.panel.querySelector('.send-status');
+    this.sendLogContainer = this.panel.querySelector('.send-log-container');
+    this.sendLog = this.panel.querySelector('.send-log');
+    this.clearLogBtn = this.panel.querySelector('.clear-log-btn');
+
+    // Util button
+    this.utilBtn = this.panel.querySelector('.util-btn');
+
+    // 반복 전송 상태
+    this.currentSendId = null;
+    this.isSending = false;
   }
 
   setupEventListeners() {
@@ -433,6 +444,18 @@ class TabController {
       this.repeatOptions.classList.toggle('hidden', !this.repeatCheckbox.checked);
     });
     this.sendBtn.addEventListener('click', () => this.sendMessage());
+    this.cancelSendBtn.addEventListener('click', () => this.cancelRepeatSend());
+    this.clearLogBtn.addEventListener('click', () => this.clearSendLog());
+
+    // Util button
+    this.utilBtn.addEventListener('click', () => this.openUtilModal());
+
+    // 전송 진행 상황 리스너
+    window.kafkaAPI.onSendProgress((progress) => {
+      if (progress.sendId === this.currentSendId) {
+        this.addSendLogEntry(progress);
+      }
+    });
   }
 
   handleModeChange(mode) {
@@ -1119,18 +1142,34 @@ class TabController {
         const intervalMs = parseInt(this.repeatIntervalInput.value) || 1000;
         const count = parseInt(this.repeatCountInput.value) || 10;
 
+        // 반복 전송 시작 - Cancel 버튼 표시, 로그 영역 표시
+        this.currentSendId = `send-${Date.now()}`;
+        this.isSending = true;
+        this.sendBtn.classList.add('hidden');
+        this.cancelSendBtn.classList.remove('hidden');
+        this.sendLogContainer.classList.remove('hidden');
+
         result = await window.kafkaAPI.sendMessageRepeat({
           broker,
           topic,
           key: key || null,
           value,
           intervalMs,
-          count
+          count,
+          sendId: this.currentSendId
         });
+
+        // 반복 전송 완료 - Cancel 버튼 숨김
+        this.isSending = false;
+        this.sendBtn.classList.remove('hidden');
+        this.cancelSendBtn.classList.add('hidden');
 
         if (result.success) {
           this.sendStatus.textContent = `Sent ${result.sentCount} messages`;
           this.sendStatus.className = 'send-status success';
+        } else if (result.cancelled) {
+          this.sendStatus.textContent = `Cancelled after ${result.sentCount} messages`;
+          this.sendStatus.className = 'send-status';
         } else {
           this.sendStatus.textContent = `Failed after ${result.sentCount} messages: ${result.error}`;
           this.sendStatus.className = 'send-status error';
@@ -1154,6 +1193,10 @@ class TabController {
     } catch (error) {
       this.sendStatus.textContent = `Error: ${error.message}`;
       this.sendStatus.className = 'send-status error';
+      // 에러 시에도 버튼 상태 복구
+      this.isSending = false;
+      this.sendBtn.classList.remove('hidden');
+      this.cancelSendBtn.classList.add('hidden');
     } finally {
       this.sendBtn.disabled = false;
 
@@ -1162,6 +1205,179 @@ class TabController {
         this.sendStatus.textContent = '';
         this.sendStatus.className = 'send-status';
       }, 3000);
+    }
+  }
+
+  async cancelRepeatSend() {
+    if (this.currentSendId && this.isSending) {
+      await window.kafkaAPI.cancelRepeatSend(this.currentSendId);
+      this.sendStatus.textContent = 'Cancelling...';
+    }
+  }
+
+  addSendLogEntry(progress) {
+    const entry = document.createElement('div');
+    entry.className = `send-log-entry ${progress.success ? 'success' : 'error'}`;
+    entry.innerHTML = `
+      <span class="send-log-time">${progress.time}</span>
+      <span class="send-log-msg">${progress.success ? `[${progress.index}/${progress.total}] Sent` : `[${progress.index}/${progress.total}] Failed: ${progress.error}`}</span>
+    `;
+    this.sendLog.appendChild(entry);
+    // 스크롤을 최하단으로
+    this.sendLog.scrollTop = this.sendLog.scrollHeight;
+  }
+
+  clearSendLog() {
+    this.sendLog.innerHTML = '';
+  }
+
+  openUtilModal() {
+    const broker = this.brokerInput.value.trim();
+    if (!broker) {
+      this.showError('Broker를 입력해주세요.');
+      return;
+    }
+
+    const modal = document.getElementById('util-modal');
+    modal.classList.remove('hidden');
+
+    // 탭 이벤트 설정
+    const tabs = modal.querySelectorAll('.util-tab');
+    const panels = modal.querySelectorAll('.util-panel');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        panels.forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const utilType = tab.dataset.util;
+        modal.querySelector(`.util-panel[data-util="${utilType}"]`).classList.add('active');
+        this.loadUtilData(utilType, broker);
+      });
+    });
+
+    // 새로고침 버튼
+    const refreshBtn = modal.querySelector('.util-refresh-btn');
+    const handleRefresh = () => {
+      const activeTab = modal.querySelector('.util-tab.active');
+      if (activeTab) {
+        this.loadUtilData(activeTab.dataset.util, broker);
+      }
+    };
+    refreshBtn.onclick = handleRefresh;
+
+    // 모달 닫기
+    const closeModal = () => {
+      modal.classList.add('hidden');
+      document.removeEventListener('keydown', handleKeydown);
+    };
+
+    const handleKeydown = (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    };
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal || e.target.classList.contains('modal-close')) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener('keydown', handleKeydown);
+
+    // 첫 번째 탭 데이터 로드
+    this.loadUtilData('broker', broker);
+  }
+
+  async loadUtilData(utilType, broker) {
+    const modal = document.getElementById('util-modal');
+    const panel = modal.querySelector(`.util-panel[data-util="${utilType}"]`);
+    const resultDiv = panel.querySelector('.util-result');
+
+    resultDiv.innerHTML = '<div class="loading">Loading...</div>';
+
+    try {
+      let result;
+      let html = '';
+
+      switch (utilType) {
+        case 'broker':
+          result = await window.kafkaAPI.getBrokerStatus(broker);
+          if (result.success) {
+            html = result.brokers.map(b => `
+              <div class="broker-item ${b.nodeId === result.controller ? 'controller' : ''}">
+                <span class="item-label">Broker ${b.nodeId} ${b.nodeId === result.controller ? '(Controller)' : ''}</span>
+                <span class="item-value">${b.host}:${b.port}</span>
+              </div>
+            `).join('');
+          } else {
+            html = `<div class="error">Error: ${result.error}</div>`;
+          }
+          break;
+
+        case 'topics':
+          result = await window.kafkaAPI.getTopicsList(broker);
+          if (result.success) {
+            if (result.topics.length === 0) {
+              html = '<div class="loading">No topics found</div>';
+            } else {
+              html = result.topics.map(t => `
+                <div class="topic-item">
+                  <span class="item-label">Partitions: ${t.partitions}</span>
+                  <span class="item-value">${t.name}</span>
+                </div>
+              `).join('');
+            }
+          } else {
+            html = `<div class="error">Error: ${result.error}</div>`;
+          }
+          break;
+
+        case 'groups':
+          result = await window.kafkaAPI.getConsumerGroups(broker);
+          if (result.success) {
+            if (result.groups.length === 0) {
+              html = '<div class="loading">No consumer groups found</div>';
+            } else {
+              html = result.groups.map(g => `
+                <div class="group-item">
+                  <span class="item-label">${g.protocolType || 'consumer'}</span>
+                  <span class="item-value">${g.groupId}</span>
+                </div>
+              `).join('');
+            }
+          } else {
+            html = `<div class="error">Error: ${result.error}</div>`;
+          }
+          break;
+
+        case 'cluster':
+          result = await window.kafkaAPI.getClusterInfo(broker);
+          if (result.success) {
+            html = `
+              <div class="broker-item">
+                <span class="item-label">Cluster ID</span>
+                <span class="item-value">${result.clusterId || 'N/A'}</span>
+              </div>
+              <div class="broker-item">
+                <span class="item-label">Controller</span>
+                <span class="item-value">Broker ${result.controller}</span>
+              </div>
+              <div class="broker-item">
+                <span class="item-label">Total Brokers</span>
+                <span class="item-value">${result.brokers.length}</span>
+              </div>
+            `;
+          } else {
+            html = `<div class="error">Error: ${result.error}</div>`;
+          }
+          break;
+      }
+
+      resultDiv.innerHTML = html;
+    } catch (error) {
+      resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
     }
   }
 

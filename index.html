@@ -68,6 +68,7 @@
             <input type="radio" name="mode" value="producer" class="mode-radio">
             <span>Producer</span>
           </label>
+          <button class="btn btn-secondary btn-sm util-btn">Util</button>
         </div>
       </section>
 
@@ -145,7 +146,15 @@
           </div>
           <div class="producer-actions">
             <button class="btn btn-primary send-btn">Send Message</button>
+            <button class="btn btn-danger cancel-send-btn hidden">Cancel</button>
             <span class="send-status"></span>
+          </div>
+          <div class="send-log-container hidden">
+            <div class="send-log-header">
+              <span>전송 로그</span>
+              <button class="btn btn-icon clear-log-btn" title="로그 지우기">🗑️</button>
+            </div>
+            <div class="send-log"></div>
           </div>
         </div>
       </section>
@@ -211,6 +220,42 @@
       <div class="modal-footer">
         <button id="settings-cancel-btn" class="btn btn-secondary">Cancel</button>
         <button id="settings-save-btn" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Util Modal -->
+  <div id="util-modal" class="modal hidden">
+    <div class="modal-content util-modal-content">
+      <div class="modal-header">
+        <h3>Kafka Utilities</h3>
+        <button class="btn-close modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="util-tabs">
+          <button class="util-tab active" data-util="broker">Broker 상태</button>
+          <button class="util-tab" data-util="topics">토픽 목록</button>
+          <button class="util-tab" data-util="groups">소비 그룹</button>
+          <button class="util-tab" data-util="cluster">클러스터 정보</button>
+        </div>
+        <div class="util-content">
+          <div class="util-panel active" data-util="broker">
+            <div class="util-result"></div>
+          </div>
+          <div class="util-panel" data-util="topics">
+            <div class="util-result"></div>
+          </div>
+          <div class="util-panel" data-util="groups">
+            <div class="util-result"></div>
+          </div>
+          <div class="util-panel" data-util="cluster">
+            <div class="util-result"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary util-refresh-btn">Refresh</button>
+        <button class="btn btn-secondary modal-close">Close</button>
       </div>
     </div>
   </div>
