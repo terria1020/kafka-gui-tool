@@ -333,6 +333,35 @@ function setupIpcHandlers() {
     }
   });
 
+  // 토픽 존재 여부 확인
+  ipcMain.handle('check-topic-exists', async (event, data) => {
+    const { broker, topic } = data;
+
+    try {
+      const brokerList = broker.split(',').map(b => b.trim()).filter(b => b);
+
+      const kafka = new Kafka({
+        clientId: 'kafka-gui-topic-checker',
+        brokers: brokerList,
+        connectionTimeout: 10000,
+        requestTimeout: 10000,
+      });
+
+      const admin = kafka.admin();
+      await admin.connect();
+
+      const topics = await admin.listTopics();
+      const exists = topics.includes(topic);
+
+      await admin.disconnect();
+
+      return { success: true, exists, topics };
+    } catch (error) {
+      console.error('Topic check error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Kafka CLI 도구 확인 (패키징된 앱에서도 동작하도록 직접 경로 탐색)
   ipcMain.handle('check-kafka-tools', async () => {
     const os = require('os');

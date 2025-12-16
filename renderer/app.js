@@ -375,6 +375,7 @@ class TabController {
     this.statusIndicator = this.panel.querySelector('.status-indicator');
     this.statusText = this.panel.querySelector('.status-text');
     this.messageCount = this.panel.querySelector('.message-count');
+    this.messagesContainer = this.panel.querySelector('.messages-container');
     this.messagesBody = this.panel.querySelector('.messages-body');
 
     // Producer elements
@@ -451,9 +452,36 @@ class TabController {
       return;
     }
 
-    this.updateStatus('connecting', 'Connecting...');
+    this.updateStatus('connecting', 'Checking topic...');
     this.startBtn.disabled = true;
     this.stopBtn.disabled = false; // 연결 중에도 Stop 버튼 활성화
+
+    // 토픽 존재 여부 확인
+    try {
+      const topicCheck = await window.kafkaAPI.checkTopicExists({ broker, topic });
+      if (!topicCheck.success) {
+        this.updateStatus('disconnected', 'Disconnected');
+        this.showError(`토픽 확인 실패: ${topicCheck.error}`);
+        this.startBtn.disabled = false;
+        this.stopBtn.disabled = true;
+        return;
+      }
+      if (!topicCheck.exists) {
+        this.updateStatus('disconnected', 'Disconnected');
+        this.showError(`토픽 '${topic}'이(가) 존재하지 않습니다.`);
+        this.startBtn.disabled = false;
+        this.stopBtn.disabled = true;
+        return;
+      }
+    } catch (error) {
+      this.updateStatus('disconnected', 'Disconnected');
+      this.showError(`토픽 확인 중 오류: ${error.message}`);
+      this.startBtn.disabled = false;
+      this.stopBtn.disabled = true;
+      return;
+    }
+
+    this.updateStatus('connecting', 'Connecting...');
 
     // 연결 타임아웃 설정 (15초)
     const connectionTimeout = 15000;
@@ -687,6 +715,10 @@ class TabController {
   }
 
   renderMessages() {
+    // 스크롤 위치 저장
+    const scrollTop = this.messagesContainer.scrollTop;
+    const wasAtTop = scrollTop === 0;
+
     // 역순으로 표시 (최신 메시지가 위로)
     const reversedMessages = [...this.filteredMessages].reverse();
 
@@ -733,6 +765,13 @@ class TabController {
         }
       });
     });
+
+    // 스크롤 위치 복원 (맨 위에 있었으면 맨 위 유지, 아니면 기존 위치 유지)
+    if (wasAtTop) {
+      this.messagesContainer.scrollTop = 0;
+    } else {
+      this.messagesContainer.scrollTop = scrollTop;
+    }
   }
 
   truncateValue(value, maxLength) {
@@ -1016,8 +1055,32 @@ class TabController {
     }
 
     this.sendBtn.disabled = true;
-    this.sendStatus.textContent = 'Sending...';
+    this.sendStatus.textContent = 'Checking topic...';
     this.sendStatus.className = 'send-status';
+
+    // 토픽 존재 여부 확인
+    try {
+      const topicCheck = await window.kafkaAPI.checkTopicExists({ broker, topic });
+      if (!topicCheck.success) {
+        this.sendStatus.textContent = `토픽 확인 실패: ${topicCheck.error}`;
+        this.sendStatus.className = 'send-status error';
+        this.sendBtn.disabled = false;
+        return;
+      }
+      if (!topicCheck.exists) {
+        this.sendStatus.textContent = `토픽 '${topic}'이(가) 존재하지 않습니다.`;
+        this.sendStatus.className = 'send-status error';
+        this.sendBtn.disabled = false;
+        return;
+      }
+    } catch (error) {
+      this.sendStatus.textContent = `토픽 확인 중 오류: ${error.message}`;
+      this.sendStatus.className = 'send-status error';
+      this.sendBtn.disabled = false;
+      return;
+    }
+
+    this.sendStatus.textContent = 'Sending...';
 
     try {
       let result;

@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('kafkaAPI', {
   // Export 관련
   exportMessages: (messages, format) => ipcRenderer.invoke('export-messages', messages, format),
 
+  // 토픽 존재 여부 확인
+  checkTopicExists: (data) => ipcRenderer.invoke('check-topic-exists', data),
+
   // Kafka CLI 도구 확인
   checkKafkaTools: () => ipcRenderer.invoke('check-kafka-tools')
 });

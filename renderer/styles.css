@@ -141,12 +141,23 @@ body {
 .main-content {
   flex: 1;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#tab-panels-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tab-panel {
   display: none;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: 20px;
   gap: 16px;
   overflow: hidden;
@@ -162,6 +173,7 @@ body {
   padding: 16px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .form-row {
@@ -243,12 +255,21 @@ body {
 }
 
 /* Consumer Section */
+.consumer-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .consumer-controls {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .filter-group {
@@ -342,6 +363,7 @@ body {
   background-color: var(--bg-secondary);
   border-radius: 6px;
   font-size: 0.875rem;
+  flex-shrink: 0;
 }
 
 .status-indicator {
@@ -689,21 +711,43 @@ body {
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
   background: var(--bg-primary);
+  border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
-  border-radius: 4px;
+  background: var(--accent-primary);
+  border-radius: 5px;
+  border: 2px solid var(--bg-primary);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4a4a6a;
+  background: var(--accent-secondary);
+}
+
+/* Messages container scrollbar */
+.messages-container::-webkit-scrollbar {
+  width: 12px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: var(--accent-primary);
+  border-radius: 6px;
+  border: 3px solid var(--bg-tertiary);
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-secondary);
 }
 
 /* Responsive */
