@@ -333,6 +333,8 @@ class TabController {
     this.extractedValues = new Map(); // msg offset -> extracted value
     this.activeValueFilter = null; // 활성 JSONPath 필터
     this.isConsuming = false;
+    this.totalReceivedCount = 0; // 총 수신 메시지 카운트
+    this.droppedCount = 0; // 필터로 버려진 메시지 카운트
 
     // Settings Manager에서 maxMessages 가져오기
     this.maxMessages = settingsManager.getMaxMessages();
@@ -531,6 +533,58 @@ class TabController {
     if (!this.isConsuming) {
       return;
     }
+
+    // 총 수신 카운트 증가
+    this.totalReceivedCount++;
+
+    // 필터가 활성화된 경우, 필터에 맞지 않는 메시지는 저장하지 않음
+    const filterText = this.filterInput.value.trim();
+    const valueFilterText = this.valueFilterInput.value.trim();
+    const hasFilter = filterText || (valueFilterText && valueFilterText.startsWith('$'));
+
+    if (hasFilter) {
+      // 키워드 필터 체크
+      if (filterText) {
+        const keyword = filterText.toLowerCase();
+        const matchesKeyword =
+          (message.key && message.key.toLowerCase().includes(keyword)) ||
+          (message.value && message.value.toLowerCase().includes(keyword));
+        if (!matchesKeyword) {
+          this.droppedCount++;
+          this.updateMessageCount();
+          return; // 필터에 맞지 않으면 버림
+        }
+      }
+
+      // JSONPath 필터 체크
+      if (valueFilterText && valueFilterText.startsWith('$')) {
+        try {
+          const parsed = JSON.parse(message.value);
+          const comparisonMatch = valueFilterText.match(/^(.+?)\s*(==|!=|>|<|>=|<=)\s*(.+)$/);
+
+          if (comparisonMatch) {
+            const result = JSONPathEvaluator.evaluate(parsed, valueFilterText);
+            if (!result) {
+              this.droppedCount++;
+              this.updateMessageCount();
+              return; // 필터에 맞지 않으면 버림
+            }
+          } else {
+            const extractedValue = JSONPathEvaluator.getValueByPath(parsed, valueFilterText);
+            if (extractedValue === undefined || extractedValue === null) {
+              this.droppedCount++;
+              this.updateMessageCount();
+              return; // 필터에 맞지 않으면 버림
+            }
+          }
+        } catch {
+          this.droppedCount++;
+          this.updateMessageCount();
+          return; // JSON 파싱 실패하면 버림
+        }
+      }
+    }
+
     this.messages.push(message);
     this.applyFilterAndEnforceLimit();
   }
@@ -899,8 +953,14 @@ class TabController {
   updateMessageCount() {
     const total = this.messages.length;
     const filtered = this.filteredMessages.length;
+    const filterText = this.filterInput.value.trim();
+    const valueFilterText = this.valueFilterInput.value.trim();
+    const hasFilter = filterText || (valueFilterText && valueFilterText.startsWith('$'));
 
-    if (total === filtered) {
+    if (hasFilter) {
+      // 필터 활성화 시: 수신 / 저장 (버림)
+      this.messageCount.textContent = `Received: ${this.totalReceivedCount} | Stored: ${total} (Dropped: ${this.droppedCount})`;
+    } else if (total === filtered) {
       this.messageCount.textContent = `Messages: ${total}`;
     } else {
       this.messageCount.textContent = `Messages: ${filtered} / ${total}`;
@@ -912,6 +972,8 @@ class TabController {
     this.filteredMessages = [];
     this.extractedValues.clear();
     this.activeValueFilter = null;
+    this.totalReceivedCount = 0;
+    this.droppedCount = 0;
     this.renderMessages();
     this.updateMessageCount();
   }
