@@ -527,6 +527,10 @@ class TabController {
   }
 
   addMessage(message) {
+    // Stop 상태면 메시지 무시
+    if (!this.isConsuming) {
+      return;
+    }
     this.messages.push(message);
     this.applyFilterAndEnforceLimit();
   }
@@ -717,6 +721,7 @@ class TabController {
     const closeModal = () => {
       modal.classList.add('hidden');
       modal.removeEventListener('click', handleClick);
+      document.removeEventListener('keydown', handleKeydown);
       // 툴팁 제거
       const tooltip = document.querySelector('.jsonpath-tooltip');
       if (tooltip) tooltip.remove();
@@ -728,7 +733,14 @@ class TabController {
       }
     };
 
+    const handleKeydown = (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    };
+
     modal.addEventListener('click', handleClick);
+    document.addEventListener('keydown', handleKeydown);
   }
 
   // 인터랙티브 JSON 렌더링
